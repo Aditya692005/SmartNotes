@@ -1,16 +1,52 @@
 "use client"
 
 import { useState } from "react"
-import { Mic, Youtube, Upload } from "lucide-react"
+import { Mic, Youtube, Upload, ArrowRight } from "lucide-react"
 import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { LiveAudioRecorder } from "@/components/live-audio-recorder"
 import { YoutubeInput } from "@/components/youtube-input"
 import { FileUploader } from "@/components/file-uploader"
+import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
 
 type InputMode = "live" | "youtube" | "upload" | null
 
 export function InputModeSelector() {
   const [selectedMode, setSelectedMode] = useState<InputMode>(null)
+  const [transcript, setTranscript] = useState("")
+  const [metadata, setMetadata] = useState<any>(null)
+  const [error, setError] = useState("")
+  const { toast } = useToast()
+  const router = useRouter()
+
+  const handleTranscriptGenerated = (newTranscript: string, newMetadata?: any) => {
+    setTranscript(newTranscript)
+    setMetadata(newMetadata)
+    setError("")
+    toast({
+      title: "Transcription Complete",
+      description: "Your content has been transcribed successfully!",
+    })
+  }
+
+  const handleError = (message: string) => {
+    setError(message)
+    setTranscript("")
+    setMetadata(null)
+  }
+
+  const handleGoToProcess = () => {
+    // Store transcript in sessionStorage for the process page
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem("transcriptData", JSON.stringify({
+        transcript,
+        source: selectedMode,
+        metadata
+      }))
+    }
+    router.push("/process")
+  }
 
   const modes = [
     {
@@ -22,7 +58,7 @@ export function InputModeSelector() {
     {
       id: "youtube" as const,
       title: "YouTube Video",
-      description: "Extract transcript from YouTube videos",
+      description: "Download audio from YouTube videos and transcribe",
       icon: Youtube,
     },
     {
@@ -68,8 +104,56 @@ export function InputModeSelector() {
 
       {/* Render selected mode component */}
       {selectedMode === "live" && <LiveAudioRecorder />}
-      {selectedMode === "youtube" && <YoutubeInput />}
-      {selectedMode === "upload" && <FileUploader />}
+      {selectedMode === "youtube" && (
+        <YoutubeInput 
+          onTranscriptGenerated={handleTranscriptGenerated}
+          onError={handleError}
+        />
+      )}
+      {selectedMode === "upload" && (
+        <FileUploader 
+          onTranscriptGenerated={handleTranscriptGenerated}
+          onError={handleError}
+        />
+      )}
+
+      {/* Show transcript if available */}
+      {transcript && (
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Generated Transcript</h3>
+              {metadata && (
+                <div className="text-sm text-muted-foreground">
+                  {metadata.videoTitle && `Video: ${metadata.videoTitle}`}
+                  {metadata.fileName && `File: ${metadata.fileName}`}
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-64 overflow-y-auto">
+              <p className="text-sm whitespace-pre-wrap">{transcript}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                <strong>Next Steps:</strong> Generate notes and mindmaps from this transcript.
+              </div>
+              <Button onClick={handleGoToProcess} className="flex items-center gap-2">
+                Generate Notes & Mindmap
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Show error if any */}
+      {error && (
+        <Card className="p-6 border-red-200 bg-red-50 dark:bg-red-950/20">
+          <div className="text-red-800 dark:text-red-200">
+            <strong>Error:</strong> {error}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

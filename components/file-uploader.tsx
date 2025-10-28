@@ -3,17 +3,25 @@
 import type React from "react"
 
 import { useState, useCallback } from "react"
-import { Upload, File, X } from "lucide-react"
+import { Upload, File, X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { ConfirmationDialog } from "./confirmation-dialog"
+import { useToast } from "@/hooks/use-toast"
 
-export function FileUploader() {
+interface FileUploaderProps {
+  onTranscriptGenerated: (transcript: string, metadata?: any) => void
+  onError: (message: string) => void
+}
+
+export function FileUploader({ onTranscriptGenerated, onError }: FileUploaderProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -60,23 +68,59 @@ export function FileUploader() {
     }
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setShowConfirmation(false)
-    if (selectedFile) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const arrayBuffer = e.target?.result as ArrayBuffer
-        sessionStorage.setItem(
-          "uploadedFile",
-          JSON.stringify({
-            data: Array.from(new Uint8Array(arrayBuffer)),
-            name: selectedFile.name,
-            type: selectedFile.type,
-          }),
-        )
-        router.push("/process?source=file-upload")
+    if (!selectedFile) return
+    
+    setIsProcessing(true)
+    onError("") // Clear previous errors
+
+    try {
+      const formData = new FormData()
+      formData.append("file", selectedFile)
+
+      const response = await fetch("/api/file-audio", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        let errorMessage = "Failed to transcribe file"
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
-      reader.readAsArrayBuffer(selectedFile)
+
+      const result = await response.json()
+      if (result.error) {
+        throw new Error(result.error)
+      }
+
+      onTranscriptGenerated(result.transcript, {
+        fileName: result.fileName,
+        fileSize: result.fileSize,
+        fileType: result.fileType
+      })
+
+      toast({
+        title: "Transcription Complete",
+        description: `Successfully transcribed: ${result.fileName}`,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "An unknown error occurred during transcription."
+      onError(message)
+      toast({
+        title: "Transcription Failed",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -132,8 +176,15 @@ export function FileUploader() {
                 </Button>
               </div>
 
-              <Button className="w-full" onClick={handleProcessFile}>
-                Process File
+              <Button className="w-full" onClick={handleProcessFile} disabled={isProcessing}>
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Transcribing...
+                  </>
+                ) : (
+                  "Process File"
+                )}
               </Button>
             </div>
           )}

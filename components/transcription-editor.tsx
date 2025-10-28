@@ -9,10 +9,20 @@ import { FileText, Edit3, Check } from "lucide-react"
 interface TranscriptionEditorProps {
   transcript: string
   onTranscriptChange: (transcript: string) => void
-  onContinue: () => void
+  onGenerateNotes?: () => void
+  onGenerateMindmap?: () => void
+  isGeneratingNotes?: boolean
+  isGeneratingMindmap?: boolean
 }
 
-export function TranscriptionEditor({ transcript, onTranscriptChange, onContinue }: TranscriptionEditorProps) {
+export function TranscriptionEditor({ 
+  transcript, 
+  onTranscriptChange, 
+  onGenerateNotes, 
+  onGenerateMindmap,
+  isGeneratingNotes = false,
+  isGeneratingMindmap = false
+}: TranscriptionEditorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedTranscript, setEditedTranscript] = useState(transcript)
 
@@ -64,10 +74,26 @@ export function TranscriptionEditor({ transcript, onTranscriptChange, onContinue
         )}
 
         {!isEditing && (
-          <div className="flex justify-end">
-            <Button onClick={onContinue} size="lg">
-              Continue to Generate Notes
-            </Button>
+          <div className="flex justify-end gap-3">
+            {onGenerateMindmap && (
+              <Button 
+                onClick={onGenerateMindmap} 
+                disabled={isGeneratingMindmap}
+                variant="outline"
+                size="lg"
+              >
+                {isGeneratingMindmap ? "Generating..." : "Generate Mindmap"}
+              </Button>
+            )}
+            {onGenerateNotes && (
+              <Button 
+                onClick={onGenerateNotes} 
+                disabled={isGeneratingNotes}
+                size="lg"
+              >
+                {isGeneratingNotes ? "Generating..." : "Generate Notes"}
+              </Button>
+            )}
           </div>
         )}
       </div>

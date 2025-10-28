@@ -1,11 +1,12 @@
 import { Check, Loader2 } from "lucide-react"
 
 interface ProcessingStepsProps {
-  currentStep: "transcribing" | "editing" | "generating" | "complete"
+  currentStep: "input" | "transcribing" | "editing" | "generating" | "complete"
 }
 
 export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
   const steps = [
+    { id: "input", label: "Input" },
     { id: "transcribing", label: "Transcribing" },
     { id: "editing", label: "Review & Edit" },
     { id: "generating", label: "Generating Notes" },

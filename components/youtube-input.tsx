@@ -1,28 +1,88 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Youtube, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { ConfirmationDialog } from "./confirmation-dialog"
+import { useToast } from "@/hooks/use-toast"
 
-export function YoutubeInput() {
+interface YoutubeInputProps {
+  onTranscriptGenerated: (transcript: string, metadata?: any) => void
+  onError: (message: string) => void
+}
+
+export function YoutubeInput({ onTranscriptGenerated, onError }: YoutubeInputProps) {
   const router = useRouter()
   const [url, setUrl] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const handleProcess = async () => {
     if (!url) return
     setShowConfirmation(true)
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setShowConfirmation(false)
-    sessionStorage.setItem("youtubeUrl", url)
-    router.push("/process?source=youtube")
+    setIsProcessing(true)
+    onError("") // Clear previous errors
+
+    try {
+      const response = await fetch("/api/youtube-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        let errorMessage = "Failed to process YouTube video"
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.error || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      const result = await response.json()
+      if (result.error) {
+        throw new Error(result.error)
+      }
+
+      onTranscriptGenerated(result.transcript, {
+        videoTitle: result.videoTitle,
+        videoId: result.videoId,
+        audioSize: result.audioSize
+      })
+
+      toast({
+        title: "Transcription Complete",
+        description: `Successfully transcribed: ${result.videoTitle}`,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "An unknown error occurred during transcription."
+      onError(message)
+      toast({
+        title: "Transcription Failed",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handleCancel = () => {
@@ -39,8 +99,17 @@ export function YoutubeInput() {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Enter a YouTube video URL to extract and process its transcript
+            Enter a YouTube video URL to extract its transcript and process it.
+            <br />
+            <strong>Note:</strong> This extracts the transcript directly from YouTube's captions/subtitles.
           </p>
+
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              <strong>📝 Transcript Method:</strong> Extracts captions/subtitles directly from YouTube.
+              Works with videos that have captions enabled!
+            </p>
+          </div>
 
           <div className="flex gap-2">
             <Input
@@ -53,17 +122,17 @@ export function YoutubeInput() {
               {isProcessing ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processing
+                  Extracting Transcript...
                 </>
               ) : (
-                "Process"
+                "Extract Transcript"
               )}
             </Button>
           </div>
 
           {isProcessing && (
             <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">Fetching transcript from YouTube...</div>
+              <div className="text-sm text-muted-foreground">Extracting transcript from YouTube captions...</div>
               <div className="w-full bg-secondary rounded-full h-2">
                 <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: "60%" }} />
               </div>

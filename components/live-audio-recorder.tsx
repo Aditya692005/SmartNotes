@@ -62,8 +62,17 @@ export function LiveAudioRecorder() {
     };
 
     recognition.onerror = (event: any) => {
+      // Don't show error for "aborted" - this is expected when stopping/pausing
+      if (event.error === "aborted") {
+        console.log("Speech recognition aborted (expected)");
+        return;
+      }
       console.error("Speech recognition error:", event.error);
-      setError(`Speech recognition error: ${event.error}`);
+      
+      // Only set error for non-abort errors
+      if (event.error !== "aborted") {
+        setError(`Speech recognition error: ${event.error}`);
+      }
       setIsListening(false);
     };
 
@@ -122,9 +131,12 @@ export function LiveAudioRecorder() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (recognitionRef.current) {
         try {
-          recognitionRef.current.abort();
+          // Stop recognition gracefully
+          if (isListening) {
+            recognitionRef.current.stop();
+          }
         } catch (err) {
-          console.error("Error aborting recognition:", err);
+          console.error("Error stopping recognition:", err);
         }
       }
     }
@@ -157,9 +169,12 @@ export function LiveAudioRecorder() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (recognitionRef.current) {
         try {
-          recognitionRef.current.abort();
+          // Stop recognition gracefully instead of aborting
+          if (isListening) {
+            recognitionRef.current.stop();
+          }
         } catch (err) {
-          console.error("Error aborting recognition:", err);
+          console.error("Error stopping recognition:", err);
         }
       }
     }
@@ -188,15 +203,17 @@ export function LiveAudioRecorder() {
 
   const handleConfirm = () => {
     setShowConfirmation(false);
-    sessionStorage.setItem(
-      "transcriptionData",
-      JSON.stringify({
-        transcript:
-          finalTranscriptRef.current.trim() ||
-          "(Audio recorded - will be transcribed on processing)",
-        source: "live-audio",
-      })
-    );
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(
+        "transcriptionData",
+        JSON.stringify({
+          transcript:
+            finalTranscriptRef.current.trim() ||
+            "(Audio recorded - will be transcribed on processing)",
+          source: "live-audio",
+        })
+      );
+    }
     router.push("/process?source=live-audio");
   };
 

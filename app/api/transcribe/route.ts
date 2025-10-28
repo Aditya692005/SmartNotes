@@ -1,4 +1,8 @@
-import { generateText } from "ai"
+import OpenAI from "openai"
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+})
 
 export async function POST(request: Request) {
   try {
@@ -10,33 +14,24 @@ export async function POST(request: Request) {
       return Response.json({ error: "Audio file is required" }, { status: 400 })
     }
 
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY) {
+      return Response.json({ error: "OpenAI API key not configured" }, { status: 500 })
+    }
+
+    // Convert file to buffer for OpenAI API
     const buffer = await audioFile.arrayBuffer()
-    const uint8Array = new Uint8Array(buffer)
+    const file = new File([buffer], audioFile.name, { type: audioFile.type })
 
-    // Convert audio to base64 for API transmission
-    const base64Audio = Buffer.from(uint8Array).toString("base64")
-
-    // Use AI SDK to transcribe with Whisper
-    const { text: transcript } = await generateText({
-      model: "openai/gpt-4o-mini",
-      prompt: `You are a transcription assistant. The following is audio content that needs to be transcribed. Please provide an accurate, complete transcription of the audio content.
-
-Note: Since we're using a text model, please provide a realistic transcription based on the audio file type: ${audioFile.type}
-
-For demonstration purposes, here's a sample transcription:`,
-      system: "You are an expert transcriptionist. Provide clear, accurate transcriptions of audio content.",
+    // Use OpenAI Whisper API for transcription
+    const transcription = await openai.audio.transcriptions.create({
+      file: file,
+      model: "whisper-1",
+      language: "en", // You can make this configurable
+      response_format: "text",
     })
 
-    // For production, you would use actual Whisper API:
-    // const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    //   method: "POST",
-    //   headers: {
-    //     Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    //   },
-    //   body: formData,
-    // })
-
-    return Response.json({ transcript })
+    return Response.json({ transcript: transcription })
   } catch (error) {
     console.error("Error transcribing audio:", error)
     return Response.json({ error: "Failed to transcribe audio" }, { status: 500 })
