@@ -1,100 +1,95 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useRef } from "react"
-import { useSearchParams } from "next/navigation"
-import { Header } from "@/components/header"
-import { TranscriptionEditor } from "@/components/transcription-editor"
-import { ProcessingSteps } from "@/components/processing-steps"
-import { OutputOptions } from "@/components/output-options"
-import { useToast } from "@/hooks/use-toast"
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import { Header } from "@/components/header";
+import { TranscriptionEditor } from "@/components/transcription-editor";
+import { ProcessingSteps } from "@/components/processing-steps";
+import { OutputOptions } from "@/components/output-options";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProcessPage() {
-  const searchParams = useSearchParams()
-  const { toast } = useToast()
-  const [currentStep, setCurrentStep] = useState<"transcribing" | "editing" | "generating" | "complete">("transcribing")
-  const [transcript, setTranscript] = useState("")
-  const [structuredNotes, setStructuredNotes] = useState("")
-  const [mindmap, setMindmap] = useState("")
-  const [error, setError] = useState("")
-  const hasTranscribedRef = useRef(false)
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+  const [currentStep, setCurrentStep] = useState<
+    "transcribing" | "editing" | "generating" | "complete"
+  >("transcribing");
+  const [transcript, setTranscript] = useState("");
+  const [structuredNotes, setStructuredNotes] = useState("");
+  const [mindmap, setMindmap] = useState("");
+  const [error, setError] = useState("");
+  const hasTranscribedRef = useRef(false);
 
   useEffect(() => {
-    const source = searchParams.get("source")
+    const source = searchParams.get("source");
 
     if (!hasTranscribedRef.current && source) {
-      hasTranscribedRef.current = true
-      transcribeContent(source)
+      hasTranscribedRef.current = true;
+      transcribeContent(source);
     }
-  }, [])
+  }, []);
 
   const transcribeContent = async (source: string | null) => {
     try {
-      setCurrentStep("transcribing")
+      setCurrentStep("transcribing");
 
       if (source === "live-audio") {
-        const transcriptionData = sessionStorage.getItem("transcriptionData")
+        const transcriptionData = sessionStorage.getItem("transcriptionData");
         if (!transcriptionData) {
-          throw new Error("No transcription data found")
+          throw new Error("No transcription data found");
         }
 
-        const { transcript: webSpeechTranscript } = JSON.parse(transcriptionData)
+        const { transcript: webSpeechTranscript } =
+          JSON.parse(transcriptionData);
         if (!webSpeechTranscript) {
-          throw new Error("No transcript generated from speech recognition")
+          throw new Error("No transcript generated from speech recognition");
         }
 
-        setTranscript(webSpeechTranscript)
-        sessionStorage.removeItem("transcriptionData")
+        setTranscript(webSpeechTranscript);
+        sessionStorage.removeItem("transcriptionData");
       } else if (source === "youtube") {
-        const youtubeUrl = sessionStorage.getItem("youtubeUrl")
+        const youtubeUrl = sessionStorage.getItem("youtubeUrl");
         if (!youtubeUrl) {
-          throw new Error("No YouTube URL found")
+          throw new Error("No YouTube URL found");
         }
 
         const response = await fetch("/api/youtube-transcript", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: youtubeUrl }),
-        })
+        });
 
-        const result = await response.json()
-        if (result.error) throw new Error(result.error)
-        setTranscript(result.transcript)
-        sessionStorage.removeItem("youtubeUrl")
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        setTranscript(result.transcript);
+        sessionStorage.removeItem("youtubeUrl");
       } else if (source === "file-upload") {
-        const fileData = sessionStorage.getItem("uploadedFile")
-        if (!fileData) {
-          throw new Error("No file data found")
+        const transcriptionData = sessionStorage.getItem("transcriptionData");
+        if (!transcriptionData) {
+          throw new Error("No transcription data found");
         }
 
-        const { data, name, type } = JSON.parse(fileData)
-        const fileBlob = new Blob([new Uint8Array(data)], { type })
+        const { transcript: fileTranscript } = JSON.parse(transcriptionData);
+        if (!fileTranscript) {
+          throw new Error("No transcript received from whisper websocket");
+        }
 
-        const formData = new FormData()
-        formData.append("audio", fileBlob, name)
-        formData.append("source", "file-upload")
-
-        const response = await fetch("/api/transcribe", {
-          method: "POST",
-          body: formData,
-        })
-
-        const result = await response.json()
-        if (result.error) throw new Error(result.error)
-        setTranscript(result.transcript)
-        sessionStorage.removeItem("uploadedFile")
+        setTranscript(fileTranscript);
+        sessionStorage.removeItem("transcriptionData");
       }
 
-      setCurrentStep("editing")
+      setCurrentStep("editing");
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to process content"
-      setError(errorMessage)
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to process content";
+      setError(errorMessage);
       toast({
         title: "Processing Error",
         description: errorMessage,
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -104,7 +99,9 @@ export default function ProcessPage() {
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="space-y-2">
             <h1 className="text-3xl font-bold">Processing Your Content</h1>
-            <p className="text-muted-foreground">Follow the steps below to generate your notes and mindmaps</p>
+            <p className="text-muted-foreground">
+              Follow the steps below to generate your notes and mindmaps
+            </p>
           </div>
 
           <ProcessingSteps currentStep={currentStep} />
@@ -124,7 +121,9 @@ export default function ProcessPage() {
             </div>
           )}
 
-          {(currentStep === "editing" || currentStep === "generating" || currentStep === "complete") && (
+          {(currentStep === "editing" ||
+            currentStep === "generating" ||
+            currentStep === "complete") && (
             <TranscriptionEditor
               transcript={transcript}
               onTranscriptChange={setTranscript}
@@ -144,5 +143,5 @@ export default function ProcessPage() {
         </div>
       </main>
     </div>
-  )
+  );
 }

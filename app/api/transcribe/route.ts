@@ -1,44 +1,62 @@
-import { generateText } from "ai"
+import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+import { spawn } from "child_process";
 
-export async function POST(request: Request) {
+// Optional: Use a temporary uploads directory
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+
+export const runtime = "nodejs";
+
+export async function POST(req: Request) {
   try {
-    const formData = await request.formData()
-    const audioFile = formData.get("audio") as File
-    const source = formData.get("source") as string
+    const formData = await req.formData();
+    const file = formData.get("audio") as File;
 
-    if (!audioFile) {
-      return Response.json({ error: "Audio file is required" }, { status: 400 })
+    if (!file) {
+      return NextResponse.json(
+        { error: "No audio file provided" },
+        { status: 400 }
+      );
     }
 
-    const buffer = await audioFile.arrayBuffer()
-    const uint8Array = new Uint8Array(buffer)
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const filePath = path.join(uploadDir, `${Date.now()}-${file.name}`);
+    fs.writeFileSync(filePath, buffer);
 
-    // Convert audio to base64 for API transmission
-    const base64Audio = Buffer.from(uint8Array).toString("base64")
+    const whisperProcess = spawn("faster-whisper", [
+      filePath,
+      "--language",
+      "en",
+      "--model",
+      "base.en",
+    ]);
 
-    // Use AI SDK to transcribe with Whisper
-    const { text: transcript } = await generateText({
-      model: "openai/gpt-4o-mini",
-      prompt: `You are a transcription assistant. The following is audio content that needs to be transcribed. Please provide an accurate, complete transcription of the audio content.
+    let output = "";
+    whisperProcess.stdout.on("data", (data) => {
+      output += data.toString();
+    });
 
-Note: Since we're using a text model, please provide a realistic transcription based on the audio file type: ${audioFile.type}
+    const exitCode: number = await new Promise((resolve) => {
+      whisperProcess.on("close", resolve);
+    });
 
-For demonstration purposes, here's a sample transcription:`,
-      system: "You are an expert transcriptionist. Provide clear, accurate transcriptions of audio content.",
-    })
+    fs.unlinkSync(filePath);
 
-    // For production, you would use actual Whisper API:
-    // const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    //   method: "POST",
-    //   headers: {
-    //     Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    //   },
-    //   body: formData,
-    // })
+    if (exitCode !== 0) {
+      return NextResponse.json(
+        { error: "Transcription failed" },
+        { status: 500 }
+      );
+    }
 
-    return Response.json({ transcript })
+    return NextResponse.json({ text: output });
   } catch (error) {
-    console.error("Error transcribing audio:", error)
-    return Response.json({ error: "Failed to transcribe audio" }, { status: 500 })
+    console.error("Transcription error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }

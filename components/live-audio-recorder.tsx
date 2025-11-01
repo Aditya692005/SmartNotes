@@ -10,107 +10,45 @@ import { ConfirmationDialog } from "./confirmation-dialog";
 
 type RecordingState = "idle" | "recording" | "paused";
 
-export function LiveAudioRecorder() {
+function LiveAudioRecorder() {
   const router = useRouter();
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [duration, setDuration] = useState(0);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const finalTranscriptRef = useRef("");
   const audioChunksRef = useRef<Blob[]>([]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setError(
-        "Your browser does not support the Web Speech API. Please use Chrome."
-      );
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setError(null);
-    };
-
-    recognition.onresult = (event: any) => {
-      let interimTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscriptRef.current += transcript + " ";
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-      setTranscript(finalTranscriptRef.current + interimTranscript);
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
-      setError(`Speech recognition error: ${event.error}`);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-  }, []);
 
   const startRecording = async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        setShowConfirmation(true);
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
       mediaRecorder.start();
       setRecordingState("recording");
-
-      if (recognitionRef.current) {
-        finalTranscriptRef.current = "";
-        setTranscript("");
-        try {
-          recognitionRef.current.start();
-        } catch (err) {
-          console.error("Failed to start speech recognition:", err);
-          setError(
-            "Speech recognition unavailable. Audio will be recorded and can be transcribed later."
-          );
-        }
-      }
-
-      intervalRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
+      intervalRef.current = setInterval(
+        () => setDuration((prev) => prev + 1),
+        1000
+      );
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
       setError("Unable to access microphone. Please check permissions.");
     }
   };
@@ -120,13 +58,6 @@ export function LiveAudioRecorder() {
       mediaRecorderRef.current.pause();
       setRecordingState("paused");
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (err) {
-          console.error("Error aborting recognition:", err);
-        }
-      }
     }
   };
 
@@ -134,48 +65,21 @@ export function LiveAudioRecorder() {
     if (mediaRecorderRef.current && recordingState === "paused") {
       mediaRecorderRef.current.resume();
       setRecordingState("recording");
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (err) {
-          console.error("Error resuming recognition:", err);
-        }
-      }
-      intervalRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
+      intervalRef.current = setInterval(
+        () => setDuration((prev) => prev + 1),
+        1000
+      );
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream
-        .getTracks()
-        .forEach((track) => track.stop());
-      setRecordingState("idle");
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (err) {
-          console.error("Error aborting recognition:", err);
-        }
-      }
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
     }
-  };
-
-  const retryTranscription = () => {
-    setError(null);
-    if (recognitionRef.current && recordingState === "recording") {
-      finalTranscriptRef.current = "";
-      setTranscript("");
-      try {
-        recognitionRef.current.start();
-      } catch (err) {
-        console.error("Error retrying recognition:", err);
-      }
-    }
+    setRecordingState("idle");
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setShowConfirmation(true);
   };
 
   const formatDuration = (seconds: number) => {
@@ -186,23 +90,62 @@ export function LiveAudioRecorder() {
       .padStart(2, "0")}`;
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setShowConfirmation(false);
+
+    // ✅ Combine chunks into final audio blob
+    const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+    const file = new File([audioBlob], "recording.webm", {
+      type: "audio/webm",
+    });
+
+    const transcript = await new Promise<string>((resolve, reject) => {
+      const ws = new WebSocket("ws://localhost:8000/transcribe");
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = async () => {
+        const buffer = await audioBlob.arrayBuffer();
+        ws.send(buffer); // ✅ send entire audio
+        ws.send("DONE"); // ✅ tell server audio is complete
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("📝 Final Transcript:", data.text);
+        resolve(data.text);
+        ws.close(); // ✅ close only after receiving transcript
+      };
+
+      ws.onerror = (err) => {
+        console.error("❌ WebSocket Error:", err);
+        reject(err);
+      };
+    });
+
+    console.log("📝 Whisper Transcript:", transcript);
+
+    // ✅ Save transcript for next page
     sessionStorage.setItem(
       "transcriptionData",
       JSON.stringify({
-        transcript:
-          finalTranscriptRef.current.trim() ||
-          "(Audio recorded - will be transcribed on processing)",
+        transcript,
         source: "live-audio",
       })
     );
+
+    // ✅ Upload original audio (if needed)
+    const formData = new FormData();
+    formData.append("audio", file);
+
+    await fetch("/api/upload-audio", {
+      method: "POST",
+      body: formData,
+    });
+
     router.push("/process?source=live-audio");
   };
 
-  const handleCancel = () => {
-    setShowConfirmation(false);
-  };
+  const handleCancel = () => setShowConfirmation(false);
 
   return (
     <>
@@ -232,36 +175,14 @@ export function LiveAudioRecorder() {
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="flex items-center justify-between">
-                <span>{error}</span>
-                {recordingState === "recording" && (
-                  <Button
-                    onClick={retryTranscription}
-                    variant="outline"
-                    size="sm"
-                    className="ml-4 bg-transparent"
-                  >
-                    Retry
-                  </Button>
-                )}
-              </AlertDescription>
+              <AlertDescription>{error}</AlertDescription>
             </Alert>
-          )}
-
-          {transcript && (
-            <div className="p-4 bg-muted rounded-lg border border-border">
-              <p className="text-sm text-muted-foreground mb-2">
-                Live Transcript:
-              </p>
-              <p className="text-sm leading-relaxed">{transcript}</p>
-            </div>
           )}
 
           <div className="flex items-center gap-3">
             {recordingState === "idle" && (
               <Button onClick={startRecording} className="gap-2">
-                <Mic className="w-4 h-4" />
-                Start Recording
+                <Mic className="w-4 h-4" /> Start Recording
               </Button>
             )}
 
@@ -270,18 +191,16 @@ export function LiveAudioRecorder() {
                 <Button
                   onClick={pauseRecording}
                   variant="outline"
-                  className="gap-2 bg-transparent"
+                  className="gap-2"
                 >
-                  <Pause className="w-4 h-4" />
-                  Pause
+                  <Pause className="w-4 h-4" /> Pause
                 </Button>
                 <Button
                   onClick={stopRecording}
                   variant="destructive"
                   className="gap-2"
                 >
-                  <Square className="w-4 h-4" />
-                  Stop
+                  <Square className="w-4 h-4" /> Stop
                 </Button>
               </>
             )}
@@ -289,16 +208,14 @@ export function LiveAudioRecorder() {
             {recordingState === "paused" && (
               <>
                 <Button onClick={resumeRecording} className="gap-2">
-                  <Play className="w-4 h-4" />
-                  Resume
+                  <Play className="w-4 h-4" /> Resume
                 </Button>
                 <Button
                   onClick={stopRecording}
                   variant="destructive"
                   className="gap-2"
                 >
-                  <Square className="w-4 h-4" />
-                  Stop
+                  <Square className="w-4 h-4" /> Stop
                 </Button>
               </>
             )}
@@ -320,3 +237,5 @@ export function LiveAudioRecorder() {
     </>
   );
 }
+
+export default LiveAudioRecorder;
