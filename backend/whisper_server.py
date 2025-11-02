@@ -97,7 +97,7 @@ async def main():
         transcribe,
         "0.0.0.0",
         8000,
-        max_size=50 * 1024 * 1024,  # Allow up to 50MB uploads
+        max_size=None,
         ping_interval=20,
         ping_timeout=20,
     ):

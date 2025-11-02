@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useRouter } from "next/navigation";
 import { ConfirmationDialog } from "./confirmation-dialog";
 
-type RecordingState = "idle" | "recording" | "paused";
+type RecordingState = "idle" | "recording" | "paused" | "stopped";
 
 function LiveAudioRecorder() {
   const router = useRouter();
@@ -24,7 +24,9 @@ function LiveAudioRecorder() {
   const startRecording = async () => {
     try {
       setError(null);
-      audioChunksRef.current = [];
+      if (recordingState === "idle") {
+        audioChunksRef.current = [];
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -73,12 +75,16 @@ function LiveAudioRecorder() {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+    if (
+      mediaRecorderRef.current &&
+      (recordingState === "recording" || recordingState === "paused")
+    ) {
+      mediaRecorderRef.current.pause(); // ✅ Only pause
+      setRecordingState("stopped"); // UI only
     }
-    setRecordingState("idle");
+
     if (intervalRef.current) clearInterval(intervalRef.current);
+
     setShowConfirmation(true);
   };
 
@@ -92,7 +98,20 @@ function LiveAudioRecorder() {
 
   const handleConfirm = async () => {
     setShowConfirmation(false);
+    if (mediaRecorderRef.current) {
+      const rec = mediaRecorderRef.current;
 
+      await new Promise<void>((resolve) => {
+        const handleFinalData = () => {
+          rec.removeEventListener("dataavailable", handleFinalData);
+          resolve();
+        };
+        rec.addEventListener("dataavailable", handleFinalData);
+        rec.stop();
+      });
+      // ✅ Always stop input stream
+      rec.stream.getTracks().forEach((t) => t.stop());
+    }
     // ✅ Combine chunks into final audio blob
     const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
     const file = new File([audioBlob], "recording.webm", {
@@ -145,7 +164,10 @@ function LiveAudioRecorder() {
     router.push("/process?source=live-audio");
   };
 
-  const handleCancel = () => setShowConfirmation(false);
+  const handleCancel = () => {
+    setShowConfirmation(false);
+    setRecordingState("paused"); // ⬅️ OR "recording" depending on what you want
+  };
 
   return (
     <>
@@ -185,7 +207,11 @@ function LiveAudioRecorder() {
                 <Mic className="w-4 h-4" /> Start Recording
               </Button>
             )}
-
+            {recordingState === "stopped" && (
+              <div className="text-sm text-muted-foreground">
+                Waiting for confirmation...
+              </div>
+            )}
             {recordingState === "recording" && (
               <>
                 <Button
