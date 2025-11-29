@@ -102,7 +102,7 @@ export function FileUploader() {
     setShowConfirmation(false);
     if (!selectedFile) return;
 
-    const transcriptPromise = new Promise<string>((resolve, reject) => {
+    const transcript = new Promise<string>((resolve, reject) => {
       const ws = new WebSocket("ws://localhost:8000/transcribe");
       ws.binaryType = "arraybuffer";
 
@@ -128,18 +128,12 @@ export function FileUploader() {
       ws.onerror = (err) => reject(err);
     });
 
-    transcriptPromise
-      .then((transcript) => {
-        sessionStorage.setItem(
-          "transcriptionData",
-          JSON.stringify({ transcript, source: "file-upload" })
-        );
+    sessionStorage.setItem(
+      "transcriptionData",
+      JSON.stringify({ transcript, source: "file-upload" })
+    );
 
-        router.push("/process?source=file-upload");
-      })
-      .catch((err) => {
-        toast.error("Transcription failed", { description: String(err) });
-      });
+    router.push("/process?source=file-upload");
   };
 
   const handleCancel = () => {

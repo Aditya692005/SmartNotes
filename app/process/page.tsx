@@ -11,70 +11,55 @@ import { useToast } from "@/hooks/use-toast";
 export default function ProcessPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
+
   const [currentStep, setCurrentStep] = useState<
     "transcribing" | "editing" | "generating" | "complete"
   >("transcribing");
+
   const [transcript, setTranscript] = useState("");
   const [structuredNotes, setStructuredNotes] = useState("");
   const [mindmap, setMindmap] = useState("");
   const [error, setError] = useState("");
+
   const hasTranscribedRef = useRef(false);
 
   useEffect(() => {
-    const source = searchParams.get("source");
+    const source = searchParams.get("source") ?? "";
 
     if (!hasTranscribedRef.current && source) {
       hasTranscribedRef.current = true;
       transcribeContent(source);
     }
-  }, []);
+  }, [searchParams]);
 
-  const transcribeContent = async (source: string | null) => {
+  const transcribeContent = async (source: string) => {
     try {
       setCurrentStep("transcribing");
 
-      if (source === "live-audio") {
-        const transcriptionData = sessionStorage.getItem("transcriptionData");
-        if (!transcriptionData) {
-          throw new Error("No transcription data found");
+      if (source === "youtube") {
+        // ✅ Get the correct key "transcriptionData"
+        const storedData = sessionStorage.getItem("transcriptionData");
+
+        if (!storedData) {
+          throw new Error("Transcript not found");
         }
 
-        const { transcript: webSpeechTranscript } =
-          JSON.parse(transcriptionData);
-        if (!webSpeechTranscript) {
-          throw new Error("No transcript generated from speech recognition");
-        }
+        // ✅ Parse the JSON and extract transcript
+        const parsedData = JSON.parse(storedData);
+        setTranscript(parsedData.transcript);
 
-        setTranscript(webSpeechTranscript);
+        // ✅ Clean up sessionStorage
         sessionStorage.removeItem("transcriptionData");
-      } else if (source === "youtube") {
-        const youtubeUrl = sessionStorage.getItem("youtubeUrl");
-        if (!youtubeUrl) {
-          throw new Error("No YouTube URL found");
+      } else if (source === "live-audio") {
+        // Handle live-audio source
+        const storedData = sessionStorage.getItem("transcriptionData");
+
+        if (!storedData) {
+          throw new Error("Transcript not found");
         }
 
-        const response = await fetch("/api/youtube-transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: youtubeUrl }),
-        });
-
-        const result = await response.json();
-        if (result.error) throw new Error(result.error);
-        setTranscript(result.transcript);
-        sessionStorage.removeItem("youtubeUrl");
-      } else if (source === "file-upload") {
-        const transcriptionData = sessionStorage.getItem("transcriptionData");
-        if (!transcriptionData) {
-          throw new Error("No transcription data found");
-        }
-
-        const { transcript: fileTranscript } = JSON.parse(transcriptionData);
-        if (!fileTranscript) {
-          throw new Error("No transcript received from whisper websocket");
-        }
-
-        setTranscript(fileTranscript);
+        const parsedData = JSON.parse(storedData);
+        setTranscript(parsedData.transcript);
         sessionStorage.removeItem("transcriptionData");
       }
 
@@ -83,6 +68,7 @@ export default function ProcessPage() {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to process content";
       setError(errorMessage);
+
       toast({
         title: "Processing Error",
         description: errorMessage,
@@ -100,7 +86,7 @@ export default function ProcessPage() {
           <div className="space-y-2">
             <h1 className="text-3xl font-bold">Processing Your Content</h1>
             <p className="text-muted-foreground">
-              Follow the steps below to generate your notes and mindmaps
+              Follow the steps below to generate your notes and mindmaps.
             </p>
           </div>
 
@@ -110,7 +96,7 @@ export default function ProcessPage() {
             <div className="text-center py-12">
               <div className="inline-flex items-center gap-3 text-muted-foreground">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                <span>Transcribing audio to text...</span>
+                <span>Transcribing...</span>
               </div>
             </div>
           )}

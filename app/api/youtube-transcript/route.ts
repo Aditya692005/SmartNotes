@@ -1,25 +1,50 @@
-export async function POST(request: Request) {
+import { NextResponse } from "next/server";
+import { Supadata } from "@supadata/js";
+
+export async function POST(req: Request) {
   try {
-    const { url } = await request.json()
+    const { url } = await req.json();
 
     if (!url) {
-      return Response.json({ error: "YouTube URL is required" }, { status: 400 })
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // TODO: Implement actual YouTube transcript fetching
-    // This would use YouTube API or a library like youtube-transcript
-    const mockTranscript = `This is a sample transcript extracted from the YouTube video.
+    const supadata = new Supadata({
+      apiKey: process.env.SUPADATA_API_KEY!,
+    });
 
-In a production environment, this would fetch the actual transcript from YouTube using either:
-1. YouTube's auto-generated captions (if available)
-2. Manual captions uploaded by the creator
-3. Audio extraction and STT processing if no transcript exists
+    // ✅ Using the exact code from the documentation
+    const transcriptResult = await supadata.transcript({
+      url,
+      lang: "en", // optional, remove if you don't need
+      text: true, // returns plain text instead of timestamp chunks
+      mode: "auto", // auto detect method (native, auto, generate)
+    });
 
-The transcript would include all spoken content with timestamps, allowing users to reference specific parts of the video. This makes it easy to create comprehensive notes from educational videos, lectures, or presentations.`
+    console.log("Transcript fetched:", transcriptResult);
 
-    return Response.json({ transcript: mockTranscript })
-  } catch (error) {
-    console.error("Error fetching YouTube transcript:", error)
-    return Response.json({ error: "Failed to fetch transcript" }, { status: 500 })
+    // ✅ Extract the content from Supadata response
+    // Supadata returns: { lang, availableLangs, content } or { jobId }
+    let transcriptText;
+
+    if (typeof transcriptResult === "string") {
+      transcriptText = transcriptResult;
+    } else if ("content" in transcriptResult) {
+      transcriptText = transcriptResult.content;
+    } else {
+      throw new Error("Unexpected response format from Supadata");
+    }
+
+    // ✅ Return the transcript to the client
+    return NextResponse.json({
+      transcript: transcriptText,
+      success: true,
+    });
+  } catch (err: any) {
+    console.error("Error fetching transcript:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to fetch transcript" },
+      { status: 500 }
+    );
   }
 }
