@@ -13,7 +13,6 @@ export async function POST(req: Request) {
       apiKey: process.env.SUPADATA_API_KEY!,
     });
 
-    // ✅ Using the exact code from the documentation
     const transcriptResult = await supadata.transcript({
       url,
       lang: "en", // optional, remove if you don't need

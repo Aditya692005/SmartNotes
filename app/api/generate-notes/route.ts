@@ -1,3 +1,4 @@
+// app/api/generate-notes/route.ts
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
 
@@ -7,62 +8,58 @@ const groq = new Groq({
 
 export async function POST(req: Request) {
   try {
-    const { notes } = await req.json();
+    const { transcript } = await req.json();
 
-    if (!notes) {
+    if (!transcript || !transcript.trim()) {
       return NextResponse.json(
-        { error: "Notes are required" },
+        { error: "Transcript is required" },
         { status: 400 }
       );
     }
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile", // Free and fast model
+      model: "llama-3.3-70b-versatile",
       messages: [
         {
           role: "system",
-          content: `You are an expert at creating mindmaps. Convert structured notes into Mermaid mindmap syntax.
+          content: `You are an expert note-taker.
+Given a raw transcript, produce clear, structured notes in Markdown.
 
 Rules:
-- Use "mindmap" as the diagram type
-- Use the root node as the main topic
-- Create branches for main sections
-- Add sub-branches for details
-- Keep node text concise (2-5 words max)
-- Use proper indentation
-- Remove any markdown symbols from the notes
-
-Example format:
-mindmap
-  root((Main Topic))
-    Section 1
-      Detail A
-      Detail B
-    Section 2
-      Detail C
-      Detail D
-
-Return ONLY the Mermaid mindmap code, no explanation or markdown code blocks.`,
+- Use headings and subheadings
+- Use bullet points and numbered lists
+- Keep sentences concise
+- Do NOT include any Mermaid or mindmap syntax
+- Only return the notes, no extra explanations`,
         },
         {
           role: "user",
-          content: `Convert these structured notes into a Mermaid mindmap:\n\n${notes}`,
+          content: `Create structured notes from this transcript:\n\n${transcript}`,
         },
       ],
-      temperature: 0.5,
-      max_tokens: 1024,
+      temperature: 0.4,
+      max_tokens: 2048,
     });
 
-    const mindmapCode = completion.choices[0]?.message?.content || "";
+    const structuredNotes =
+      completion.choices[0]?.message?.content?.trim() ?? "";
 
-    return NextResponse.json({
-      mindmap: mindmapCode.trim(),
-      success: true,
-    });
-  } catch (err: any) {
-    console.error("Error generating mindmap:", err);
+    if (!structuredNotes) {
+      return NextResponse.json(
+        { error: "Model returned empty notes" },
+        { status: 500 }
+      );
+    }
+
+    // The frontend expects `data.notes`
     return NextResponse.json(
-      { error: err.message || "Failed to generate mindmap" },
+      { notes: structuredNotes, success: true },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error("Error generating notes:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to generate notes" },
       { status: 500 }
     );
   }
