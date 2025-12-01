@@ -34,45 +34,104 @@ export function OutputOptions({
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    if (isGenerating && transcript && !notes && !mindmapData) {
+    if (isGenerating && transcript && (!notes || !mindmapData)) {
       generateContent();
     }
-  }, [isGenerating, transcript]);
+  }, [isGenerating, transcript, notes, mindmapData]);
+
+  // Keep local state in sync if parent passes new values (e.g., when user
+  // navigates back or when values are set from elsewhere in the app).
+  useEffect(() => {
+    if (structuredNotes && structuredNotes !== notes) setNotes(structuredNotes);
+  }, [structuredNotes]);
+
+  useEffect(() => {
+    if (mindmap && mindmap !== mindmapData) setMindmapData(mindmap);
+  }, [mindmap]);
+
+  // If notes are already available but a mindmap hasn't been generated, run
+  // the generation flow even if `isGenerating` is false (e.g., we've marked
+  // the pipeline complete earlier). The guard ensures we don't start another
+  // generation if one is already in progress.
+  useEffect(() => {
+    if (!isLoading && !mindmapData && notes && notes.trim()) {
+      generateContent();
+    }
+  }, [notes, mindmapData, isLoading]);
 
   const generateContent = async () => {
+    if (isLoading) return;
     setIsLoading(true);
 
     try {
-      // ✅ Generate Structured Notes
-      const notesResponse = await fetch("/api/generate-notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript }),
-      });
+      let finalNotes = notes;
+      // ✅ Generate Structured Notes if we don't already have them
+      if (!finalNotes) {
+        const notesResponse = await fetch("/api/generate-notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript }),
+        });
 
-      if (!notesResponse.ok) {
-        throw new Error("Failed to generate notes");
+        if (!notesResponse.ok) {
+          let errMsg = `Failed to generate notes (status ${notesResponse.status})`;
+          try {
+            const errJson = await notesResponse.json();
+            errMsg = errJson?.error || errMsg;
+          } catch (e) {
+            try {
+              const errText = await notesResponse.text();
+              if (errText) errMsg = errText;
+            } catch (_) {}
+          }
+          console.error(
+            "Notes response error:",
+            notesResponse.status,
+            notesResponse.statusText
+          );
+          throw new Error(errMsg);
+        }
+
+        const notesData = await notesResponse.json();
+        finalNotes = notesData.structuredNotes;
+        setNotes(finalNotes);
+        onNotesGenerated?.(finalNotes);
       }
 
-      const notesData = await notesResponse.json();
-      setNotes(notesData.notes);
-      onNotesGenerated?.(notesData.notes);
-
-      // ✅ Generate Mindmap (use generated structured notes, NOT transcript)
+      // ✅ Generate Mindmap (use structured notes)
       const mindmapResponse = await fetch("/api/generate-mindmap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: notesData.notes }),
+        body: JSON.stringify({ notes: finalNotes }),
       });
 
       if (!mindmapResponse.ok) {
-        throw new Error("Failed to generate mindmap");
+        let errMsg = `Failed to generate mindmap (status ${mindmapResponse.status})`;
+        try {
+          const errJson = await mindmapResponse.json();
+          errMsg = errJson?.error || errMsg;
+        } catch (e) {
+          // If it's not JSON, attempt to read text
+          try {
+            const errText = await mindmapResponse.text();
+            if (errText) errMsg = errText;
+          } catch (err) {
+            // ignore
+          }
+        }
+        console.error(
+          "Mindmap response error:",
+          mindmapResponse.status,
+          mindmapResponse.statusText
+        );
+        throw new Error(errMsg);
       }
 
       const mindmapResponseData = await mindmapResponse.json();
       const mmd = mindmapResponseData.mindmap;
 
       // Convert Mermaid (mmd) to SVG via server API
+      let didConvertToSvg = false;
       try {
         console.log("Converting mindmap to SVG...", { mmdLength: mmd.length });
         const convertRes = await fetch("/api/convert-mmd", {
@@ -81,22 +140,53 @@ export function OutputOptions({
           body: JSON.stringify({ mmd }),
         });
 
-        console.log("Convert response status:", convertRes.status, convertRes.statusText);
+        console.log(
+          "Convert response status:",
+          convertRes.status,
+          convertRes.statusText
+        );
 
         if (!convertRes.ok) {
           let errorMsg = "Failed to convert mindmap to SVG";
+          let errData: any = null;
           try {
-            const errData = await convertRes.json();
+            errData = await convertRes.json();
             errorMsg = errData?.error || errorMsg;
-          } catch {
-            // If response is not JSON, use default message
+          } catch (e) {
+            // If response is not JSON, attempt to read text
+            try {
+              const text = await convertRes.text();
+              if (text) errorMsg = text;
+            } catch (_e) {}
           }
-          console.error("SVG conversion error:", errorMsg);
+
+          console.error("SVG conversion error:", errorMsg, errData);
+
+          // If the server provided a sanitized MMD, prefer showing that to the user
+          const sanitizedForUI =
+            errData?.aggressiveMmd || errData?.sanitizedMmd || mmd;
+
+          // Set the mindmapData to the sanitized/adjusted MMD that the server tried,
+          // so the user sees the corrected version instead of raw (if available).
+          setMindmapData(sanitizedForUI);
+          onMindmapGenerated?.(sanitizedForUI);
+
+          // Show a helpful toast with the error and a quick hint.
+          toast({
+            title: "Mindmap Conversion Failed",
+            description: `${errorMsg}. Showing sanitized Mermaid code for inspection.`,
+            variant: "destructive",
+          });
+
+          // Throw to jump to the outer catch logic (which is fallback behavior)
           throw new Error(errorMsg);
         }
 
         const svgText = await convertRes.text();
-        console.log("SVG generated successfully", { svgLength: svgText.length });
+        didConvertToSvg = true;
+        console.log("SVG generated successfully", {
+          svgLength: svgText.length,
+        });
         setMindmapData(svgText);
         onMindmapGenerated?.(svgText);
       } catch (convertError) {
@@ -106,23 +196,25 @@ export function OutputOptions({
         onMindmapGenerated?.(mmd);
         toast({
           title: "Mindmap Conversion Failed",
-          description: "Could not render mindmap SVG. Showing raw Mermaid code instead.",
+          description:
+            "Could not render mindmap SVG. Showing raw Mermaid code instead.",
           variant: "destructive",
         });
       }
 
-      onComplete();
+      // Only call onComplete when the mindmap was converted to SVG successfully.
+      if (didConvertToSvg) onComplete();
 
       toast({
         title: "Generation Complete",
         description: "Your notes and mindmap have been generated successfully.",
       });
-    } catch (error) {
-      console.error("Error generating content:", error);
+    } catch (error: any) {
+      const message = error?.message || String(error) || "Unknown error";
+      console.error("Error generating content:", message, error);
       toast({
         title: "Generation Failed",
-        description:
-          "There was an error generating your content. Please try again.",
+        description: `There was an error generating your content: ${message}`,
         variant: "destructive",
       });
     } finally {
@@ -178,11 +270,13 @@ export function OutputOptions({
 
   const isSvg = (content: string): boolean => {
     if (!content) return false;
-    const trimmed = content.trim().toLowerCase();
-    return trimmed.startsWith("<svg");
+    const trimmed = content.trim();
+    // Detect SVG by looking for an <svg ...> tag anywhere in the content
+    // This handles XML declarations (<?xml ...?>) and doctypes that appear before the <svg> tag
+    return /<svg[\s>]/i.test(trimmed);
   };
 
-  const handleDownloadSvg = (svgContent: string) => {
+  const handleDownloadSvg = async (svgContent: string) => {
     try {
       const blob = new Blob([svgContent], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
@@ -209,14 +303,27 @@ export function OutputOptions({
   };
 
   const handleDownloadAll = async () => {
-    await handleDownload("transcript");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await handleDownload("notes");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    if (isSvg(mindmapData)) {
-      handleDownloadSvg(mindmapData);
-    } else {
-      await handleDownload("mindmap");
+    // Ensure the UI shows we're exporting for the whole multi-download operation
+    setIsExporting(true);
+    try {
+      await handleDownload("transcript");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await handleDownload("notes");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (isSvg(mindmapData)) {
+        await handleDownloadSvg(mindmapData);
+      } else {
+        await handleDownload("mindmap");
+      }
+    } catch (err) {
+      console.error("Error while downloading all files:", err);
+      toast({
+        title: "Download Failed",
+        description: "There was an error downloading one or more files.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/header";
 import { TranscriptionEditor } from "@/components/transcription-editor";
@@ -32,6 +34,26 @@ export default function ProcessPage() {
     }
   }, [searchParams]);
 
+  // Mark the pipeline as complete only when both notes and mindmap are present
+  // and the mindmap is a rendered SVG. This prevents false completion when
+  // only raw Mermaid markup is available.
+  const isSvg = (content?: string) => {
+    if (!content) return false;
+    return /<svg[\s>]/i.test(content.trim());
+  };
+
+  useEffect(() => {
+    if (
+      structuredNotes &&
+      structuredNotes.trim() &&
+      mindmap &&
+      mindmap.trim() &&
+      isSvg(mindmap)
+    ) {
+      setCurrentStep("complete");
+    }
+  }, [structuredNotes, mindmap]);
+
   const transcribeContent = async (source: string) => {
     try {
       setCurrentStep("transcribing");
@@ -50,7 +72,7 @@ export default function ProcessPage() {
 
         // ✅ Clean up sessionStorage
         sessionStorage.removeItem("transcriptionData");
-      } else if (source === "live-audio") {
+      } else if (source === "live-audio" || source === "file-upload") {
         // Handle live-audio source
         const storedData = sessionStorage.getItem("transcriptionData");
 
@@ -60,6 +82,8 @@ export default function ProcessPage() {
 
         const parsedData = JSON.parse(storedData);
         setTranscript(parsedData.transcript);
+        // If this was a file upload, we can optionally store fileName or source metadata
+        // into state if needed later (storedData includes fileName for file-upload)
         sessionStorage.removeItem("transcriptionData");
       }
 
@@ -113,7 +137,12 @@ export default function ProcessPage() {
             <TranscriptionEditor
               transcript={transcript}
               onTranscriptChange={setTranscript}
-              onContinue={() => setCurrentStep("generating")}
+              // Default to 'generating' when continuing and allow explicit
+              // nextStep override from child components.
+              onContinue={(nextStep) =>
+                setCurrentStep(nextStep ?? "generating")
+              }
+              onNotesGenerated={setStructuredNotes}
             />
           )}
 
@@ -127,6 +156,21 @@ export default function ProcessPage() {
               onNotesGenerated={setStructuredNotes}
               onMindmapGenerated={setMindmap}
             />
+          )}
+
+          {/* When the processing reaches the complete state, provide a simple
+              link back to the home page so users can continue their workflow. */}
+          {currentStep === "complete" && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="w-full max-w-md"
+              >
+                <Link href="/">Back to Home</Link>
+              </Button>
+            </div>
           )}
         </div>
       </main>

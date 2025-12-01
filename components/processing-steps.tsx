@@ -1,7 +1,7 @@
-import { Check, Loader2 } from "lucide-react"
+import { Check, Loader2 } from "lucide-react";
 
 interface ProcessingStepsProps {
-  currentStep: "transcribing" | "editing" | "generating" | "complete"
+  currentStep: "transcribing" | "editing" | "generating" | "complete";
 }
 
 export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
@@ -10,21 +10,28 @@ export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
     { id: "editing", label: "Review & Edit" },
     { id: "generating", label: "Generating Notes" },
     { id: "complete", label: "Complete" },
-  ]
+  ];
 
   const getStepStatus = (stepId: string) => {
-    const stepIndex = steps.findIndex((s) => s.id === stepId)
-    const currentIndex = steps.findIndex((s) => s.id === currentStep)
+    const stepIndex = steps.findIndex((s) => s.id === stepId);
+    const currentIndex = steps.findIndex((s) => s.id === currentStep);
 
-    if (stepIndex < currentIndex) return "complete"
-    if (stepIndex === currentIndex) return "current"
-    return "upcoming"
-  }
+    // If the entire pipeline is in the complete state, treat all steps up to
+    // and including the final step as 'complete'. This makes the final step
+    // render as a checkmark as expected.
+    if (currentStep === "complete") {
+      return stepIndex <= currentIndex ? "complete" : "upcoming";
+    }
+
+    if (stepIndex < currentIndex) return "complete";
+    if (stepIndex === currentIndex) return "current";
+    return "upcoming";
+  };
 
   return (
     <div className="flex items-center justify-between">
       {steps.map((step, index) => {
-        const status = getStepStatus(step.id)
+        const status = getStepStatus(step.id);
 
         return (
           <div key={step.id} className="flex items-center flex-1">
@@ -34,8 +41,8 @@ export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
                   status === "complete"
                     ? "bg-primary border-primary text-primary-foreground"
                     : status === "current"
-                      ? "border-primary text-primary"
-                      : "border-border text-muted-foreground"
+                    ? "border-primary text-primary"
+                    : "border-border text-muted-foreground"
                 }`}
               >
                 {status === "complete" ? (
@@ -47,7 +54,11 @@ export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
                 )}
               </div>
               <span
-                className={`text-sm font-medium ${status === "current" ? "text-foreground" : "text-muted-foreground"}`}
+                className={`text-sm font-medium ${
+                  status === "current"
+                    ? "text-foreground"
+                    : "text-muted-foreground"
+                }`}
               >
                 {step.label}
               </span>
@@ -55,12 +66,14 @@ export function ProcessingSteps({ currentStep }: ProcessingStepsProps) {
 
             {index < steps.length - 1 && (
               <div
-                className={`flex-1 h-0.5 mx-4 transition-colors ${status === "complete" ? "bg-primary" : "bg-border"}`}
+                className={`flex-1 h-0.5 mx-4 transition-colors ${
+                  status === "complete" ? "bg-primary" : "bg-border"
+                }`}
               />
             )}
           </div>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

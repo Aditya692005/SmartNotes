@@ -1,7 +1,6 @@
 // app/api/generate-notes/route.ts
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { generateNotes } from "./notesGenrator/generateNotes.js";
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY!,
@@ -52,9 +51,9 @@ Rules:
       );
     }
 
-    // The frontend expects `data.notes`
+    // The frontend expects `data.structuredNotes`
     return NextResponse.json(
-      { notes: structuredNotes, success: true },
+      { structuredNotes, success: true },
       { status: 200 }
     );
   } catch (err: any) {

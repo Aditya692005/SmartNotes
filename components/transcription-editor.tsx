@@ -9,13 +9,15 @@ import { FileText, Edit3, Check } from "lucide-react";
 interface TranscriptionEditorProps {
   transcript: string;
   onTranscriptChange: (transcript: string) => void;
-  onContinue: () => void;
+  onContinue: (nextStep?: "generating" | "complete") => void;
+  onNotesGenerated?: (notes: string) => void;
 }
 
 export function TranscriptionEditor({
   transcript,
   onTranscriptChange,
   onContinue,
+  onNotesGenerated,
 }: TranscriptionEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedTranscript, setEditedTranscript] = useState(transcript);
@@ -111,15 +113,20 @@ export function TranscriptionEditor({
                   }
 
                   // store structuredNotes so other parts of the app can access if needed
-                  if (data?.notes) {
+                  if (data?.structuredNotes) {
                     try {
-                      sessionStorage.setItem("structuredNotes", data.notes);
+                      sessionStorage.setItem(
+                        "structuredNotes",
+                        data.structuredNotes
+                      );
                     } catch (e) {
                       console.error("Storage error:", e);
                     }
+                    onNotesGenerated?.(data.structuredNotes);
                   }
 
-                  onContinue();
+                  // If notes were just generated, proceed to generate (mindmap)
+                  onContinue("generating");
                 } catch (err) {
                   console.error("Error calling /api/generate-notes:", err);
                   alert("Failed to generate notes. Check console for details.");
@@ -128,7 +135,9 @@ export function TranscriptionEditor({
                 }
               }}
               size="lg"
-              disabled={isSubmitting || !transcript?.trim()}
+              disabled={
+                isSubmitting || !(editedTranscript || transcript)?.trim()
+              }
             >
               {isSubmitting ? "Generating..." : "Continue to Generate Notes"}
             </Button>

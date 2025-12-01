@@ -119,7 +119,7 @@ function LiveAudioRecorder() {
     });
 
     const transcript = await new Promise<string>((resolve, reject) => {
-      const ws = new WebSocket("wss://apathetic-hyperridiculously-bobette.ngrok-free.dev/transcribe");
+      const ws = new WebSocket("ws://localhost:8000/transcribe");
       ws.binaryType = "arraybuffer";
 
       ws.onopen = async () => {

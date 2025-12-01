@@ -1,90 +1,151 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { spawnSync } from "child_process";
 
 export async function POST(req: Request) {
   try {
     const { mmd } = await req.json();
 
     if (!mmd || typeof mmd !== "string") {
-      return NextResponse.json({ error: "`mmd` (mermaid code) is required" }, { status: 400 });
+      return NextResponse.json({ error: "mmd is required" }, { status: 400 });
     }
 
-    // Create a temp directory to store input/output files
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmd-"));
-    const inputPath = path.join(tmpDir, "input.mmd");
-    const outputPath = path.join(tmpDir, "output.svg");
+    // Sanitize the incoming MMD so Kroki receives well-formed Mermaid.
+    const sanitizedMmd = sanitizeMermaid(mmd);
 
-    fs.writeFileSync(inputPath, mmd, "utf8");
+    // ✅ Use Kroki's API to convert Mermaid to SVG. If Kroki errors due to
+    // malformed MMD, we attempt an aggressive sanitize and retry, otherwise
+    // return helpful debug information to the client.
+    let response = await fetch("https://kroki.io/mermaid/svg", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain",
+      },
+      body: sanitizedMmd,
+    });
 
-    // Try to run local mmdc (mermaid-cli). Use npx fallback if not available.
-    let bin: string;
-    const isWindows = process.platform === "win32";
-    
-    if (isWindows) {
-      bin = path.join(process.cwd(), "node_modules", ".bin", "mmdc.cmd");
-    } else {
-      bin = path.join(process.cwd(), "node_modules", ".bin", "mmdc");
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Kroki API error (sanitized):", errorText);
+
+      // If Kroki complains about roots / indentation we try an aggressive
+      // sanitize, resend to kroki and return the sanitized input if that fails
+      if (isLikelyRootError(errorText)) {
+        const aggressive = aggressiveSanitizeMermaid(mmd);
+        if (aggressive !== sanitizedMmd) {
+          const retryRes = await fetch("https://kroki.io/mermaid/svg", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: aggressive,
+          });
+
+          if (retryRes.ok) {
+            const svg = await retryRes.text();
+            return new NextResponse(svg, {
+              headers: { "Content-Type": "image/svg+xml" },
+            });
+          }
+
+          const retryErr = await retryRes.text();
+          console.error("Kroki API error (aggressive):", retryErr);
+          return NextResponse.json(
+            {
+              error: `Kroki API failed: ${retryErr}`,
+              reason: errorText,
+              sanitizedMmd,
+              aggressiveMmd: aggressive,
+            },
+            { status: 500 }
+          );
+        }
+      }
+      // Generic failure: include sanitized MMD for debugging
+      return NextResponse.json(
+        { error: `Kroki API failed: ${errorText}`, sanitizedMmd },
+        { status: 500 }
+      );
     }
-    
-    let res;
 
-    console.log("Platform:", process.platform);
-    console.log("Looking for mmdc at:", bin);
-    console.log("Binary exists:", fs.existsSync(bin));
-
-    if (fs.existsSync(bin)) {
-      console.log("Using local mmdc binary");
-      res = spawnSync(bin, ["-i", inputPath, "-o", outputPath], { encoding: "utf8", shell: true });
-    } else {
-      // Use npx to run the installed package or fetch it
-      console.log("Using npx to run mermaid-cli");
-      res = spawnSync("npx", ["@mermaid-js/mermaid-cli", "-i", inputPath, "-o", outputPath], { encoding: "utf8", shell: true });
-    }
-
-    if (res.error) {
-      console.error("Error running mermaid-cli:", res.error);
-      cleanup(tmpDir);
-      return NextResponse.json({ error: "Failed to run mermaid renderer: " + res.error.message }, { status: 500 });
-    }
-
-    if (res.status !== 0) {
-      console.error("mermaid-cli exit:", res.status, "stdout:", res.stdout, "stderr:", res.stderr);
-      cleanup(tmpDir);
-      return NextResponse.json({ error: "mermaid-cli failed: " + (res.stderr || res.stdout) }, { status: 500 });
-    }
-
-    if (!fs.existsSync(outputPath)) {
-      cleanup(tmpDir);
-      return NextResponse.json({ error: "Renderer did not produce an SVG" }, { status: 500 });
-    }
-
-    const svg = fs.readFileSync(outputPath, "utf8");
-
-    // Clean up temp files
-    cleanup(tmpDir);
+    const svg = await response.text();
 
     return new NextResponse(svg, {
-      headers: { "Content-Type": "image/svg+xml" },
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=3600",
+      },
     });
   } catch (err: any) {
-    console.error("Error converting mmd to svg:", err);
-    return NextResponse.json({ error: err.message || "Failed to convert mmd" }, { status: 500 });
+    console.error("SVG error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-function cleanup(tmpDir: string) {
-  try {
-    const files = fs.readdirSync(tmpDir);
-    for (const f of files) {
-      try {
-        fs.unlinkSync(path.join(tmpDir, f));
-      } catch {}
+  // ------------------ HELPERS ---------------------
+
+  function sanitizeMermaid(input: string): string {
+    if (!input) return "mindmap\n  root((Main Topic))";
+    const trimmed = input.trim();
+    if (!trimmed.startsWith("mindmap")) {
+      // Place the content under a simple mindmap root
+      return `mindmap\n  ${trimmed}`;
     }
-    fs.rmdirSync(tmpDir);
-  } catch (e) {
-    // ignore
+    return trimmed;
   }
-}
+
+  function aggressiveSanitizeMermaid(input: string): string {
+    if (!input) return "mindmap\n  root((Main Topic))";
+    const lines = input.split(/\r?\n/);
+    // Ensure the mindmap header is present
+    let headIdx = 0;
+    while (headIdx < lines.length && lines[headIdx].trim() === "") headIdx++;
+    if (!/^\s*mindmap\b/i.test(lines[headIdx] || "")) {
+      lines.splice(headIdx, 0, "mindmap");
+    }
+
+    const rootRegex = /^\s*root\s*\(\(/i;
+    const rootIndices: number[] = [];
+    for (let i = 0; i < lines.length; i++) if (rootRegex.test(lines[i])) rootIndices.push(i);
+
+    if (rootIndices.length > 1) {
+      // Keep the first root; convert others to siblings beneath it.
+      for (let k = 1; k < rootIndices.length; k++) {
+        const idx = rootIndices[k];
+        const labelMatch = lines[idx].match(/root\s*\(\(([^)]+)\)\)/i);
+        const label = labelMatch ? labelMatch[1].trim() : `Node${k}`;
+        lines[idx] = `  ${label}`;
+        const end = rootIndices[k + 1] ?? lines.length;
+        for (let j = idx + 1; j < end; j++) {
+          if (lines[j].trim() !== "") lines[j] = `  ${lines[j]}`;
+        }
+      }
+      return lines.join("\n");
+    }
+
+    if (rootIndices.length === 0) {
+      // Insert a root after mindmap header and indent subsequent lines
+      const headerIndex = headIdx;
+      const rootLine = `  root((Main Topic))`;
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        if (lines[i].trim() !== "") lines[i] = `  ${lines[i]}`;
+      }
+      lines.splice(headerIndex + 1, 0, rootLine);
+      return lines.join("\n");
+    }
+
+    // Ensure nodes after root are indented at least two spaces
+    const rootIdx = rootIndices[0];
+    for (let i = rootIdx + 1; i < lines.length; i++) {
+      if (lines[i].trim() !== "" && !/^\s/.test(lines[i])) {
+        lines[i] = `  ${lines[i]}`;
+      }
+    }
+    return lines.join("\n");
+  }
+
+  function isLikelyRootError(errorText: string) {
+    const t = (errorText || "").toLowerCase();
+    return (
+      t.includes("there can be only one root") ||
+      t.includes("no parent could be found") ||
+      t.includes("no root") ||
+      t.includes("no parent")
+    );
+  }
