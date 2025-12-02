@@ -1,166 +1,248 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
-import { Header } from "@/components/header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { 
-  FileText, 
-  Brain, 
-  Network, 
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter, useParams } from "next/navigation";
+import { Header } from "@/components/header";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  FileText,
+  Brain,
+  Network,
   Calendar,
   ArrowLeft,
   Download,
-  ExternalLink
-} from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import Link from "next/link"
+  ExternalLink,
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import Link from "next/link";
 
 interface Note {
-  id: string
-  title: string
-  transcript: string
-  structuredNotes: string
-  mindmapData?: string
-  source: string
-  sourceUrl?: string
-  fileName?: string
-  createdAt: string
-  updatedAt: string
+  id: string;
+  title: string;
+  transcript: string;
+  structuredNotes: string;
+  mindmapData?: string;
+  source: string;
+  sourceUrl?: string;
+  fileName?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export default function NotePage({ params }: { params: { id: string } }) {
-  const { data: session, status } = useSession()
-  const router = useRouter()
-  const { toast } = useToast()
-  const [note, setNote] = useState<Note | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isExporting, setIsExporting] = useState(false)
-  const [selectedType, setSelectedType] = useState<"transcript" | "notes" | "mindmap">("transcript")
-  const [selectedFormat, setSelectedFormat] = useState<"docx" | "pdf" | "txt">("docx")
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const clientParams = useParams();
+  const { toast } = useToast();
+  const [note, setNote] = useState<Note | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState<"docx" | "txt">("docx");
 
   useEffect(() => {
     async function loadNote() {
       if (status === "unauthenticated") {
-        router.push("/auth/signin")
-        return
+        router.push("/auth/signin");
+        return;
       }
       if (status === "authenticated") {
         // Await params if needed
-        const id = params.id
-        await fetchNote(id)
+        let id = clientParams?.id ?? params?.id;
+        if (Array.isArray(id)) {
+          id = id[0];
+        }
+        await fetchNote(id);
       }
     }
-    loadNote()
-  }, [status, router, params])
+    loadNote();
+  }, [status, router, params]);
 
   const fetchNote = async (id: string) => {
     try {
-      const response = await fetch(`/api/notes/${id}`)
+      const response = await fetch(`/api/notes/${id}`);
       if (response.ok) {
-        const data = await response.json()
-        setNote(data.note)
+        const data = await response.json();
+        setNote(data.note);
       } else if (response.status === 404) {
         toast({
           title: "Note Not Found",
           description: "The requested note could not be found.",
           variant: "destructive",
-        })
-        router.push("/dashboard")
+        });
+        router.push("/dashboard");
       } else {
         toast({
           title: "Error",
           description: "Failed to fetch note",
           variant: "destructive",
-        })
+        });
       }
     } catch (error) {
-      console.error("Error fetching note:", error)
+      console.error("Error fetching note:", error);
       toast({
         title: "Error",
         description: "Failed to fetch note",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const handleDownload = async (type: "transcript" | "notes" | "mindmap", format: "docx" | "pdf" | "txt" = "docx") => {
-    if (!note) return
+  const handleDownload = async (
+    type: "transcript" | "notes" | "mindmap",
+    format: "docx" | "txt" = "docx"
+  ) => {
+    if (!note) return;
 
-    setIsExporting(true)
+    setIsExporting(true);
     try {
-      const content = type === "transcript" ? note.transcript :
-                    type === "notes" ? note.structuredNotes :
-                    note.mindmapData || ""
+      const content =
+        type === "transcript"
+          ? note.transcript
+          : type === "notes"
+          ? note.structuredNotes
+          : note.mindmapData || "";
 
       const response = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, type, format }),
-      })
+      });
 
       if (!response.ok) {
-        throw new Error("Export failed")
+        throw new Error("Export failed");
       }
 
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${note.title}-${type}-${Date.now()}.${format}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${note.title}-${type}-${Date.now()}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
       toast({
         title: "Download Started",
         description: `Your ${type} document is being downloaded as ${format}.`,
-      })
+      });
     } catch (error) {
-      console.error("Error downloading:", error)
+      console.error("Error downloading:", error);
       toast({
         title: "Download Failed",
-        description: "There was an error downloading your document. Please try again.",
+        description:
+          "There was an error downloading your document. Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }
+  };
+
+  const downloadMindmapSVG = async () => {
+    if (!note?.mindmapData) {
+      toast({
+        title: "No Mindmap",
+        description: "This note doesn't contain a mindmap to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      let svg = note.mindmapData.trim();
+      if (!svg.startsWith("<svg")) {
+        // Try converting via server
+        const res = await fetch("/api/convert-mmd", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mmd: svg }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Convert error:", err);
+          toast({
+            title: "Conversion Failed",
+            description: err?.error || "Failed to convert Mermaid to SVG.",
+            variant: "destructive",
+          });
+          return;
+        }
+        svg = await res.text();
+      }
+
+      const blob = new Blob([svg], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${note.title}-mindmap-${Date.now()}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download Started",
+        description: "Your mindmap SVG is downloading.",
+      });
+    } catch (e) {
+      console.error("Download mindmap SVG error:", e);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download the mindmap.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const getSourceIcon = (source: string) => {
     switch (source) {
       case "live-audio":
-        return "🎤"
+        return "🎤";
       case "youtube":
-        return "📺"
+        return "📺";
       case "file-upload":
-        return "📁"
+        return "📁";
       default:
-        return "📄"
+        return "📄";
     }
-  }
+  };
 
   const getSourceLabel = (source: string) => {
     switch (source) {
       case "live-audio":
-        return "Live Audio"
+        return "Live Audio";
       case "youtube":
-        return "YouTube Video"
+        return "YouTube Video";
       case "file-upload":
-        return "File Upload"
+        return "File Upload";
       default:
-        return "Unknown"
+        return "Unknown";
     }
-  }
+  };
 
   if (status === "loading" || isLoading) {
     return (
@@ -184,17 +266,17 @@ export default function NotePage({ params }: { params: { id: string } }) {
           </div>
         </main>
       </div>
-    )
+    );
   }
 
   if (status === "unauthenticated" || !note) {
-    return null
+    return null;
   }
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
@@ -216,9 +298,7 @@ export default function NotePage({ params }: { params: { id: string } }) {
                   <span>{new Date(note.createdAt).toLocaleDateString()}</span>
                 </div>
                 {note.fileName && (
-                  <div className="text-xs">
-                    {note.fileName}
-                  </div>
+                  <div className="text-xs">{note.fileName}</div>
                 )}
               </div>
             </div>
@@ -283,7 +363,9 @@ export default function NotePage({ params }: { params: { id: string } }) {
                 <CardContent>
                   <div className="p-4 bg-secondary rounded-lg min-h-[300px] max-h-[500px] overflow-y-auto">
                     <div className="prose prose-sm max-w-none prose-invert">
-                      <div className="whitespace-pre-wrap">{note.structuredNotes}</div>
+                      <div className="whitespace-pre-wrap">
+                        {note.structuredNotes}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -301,10 +383,16 @@ export default function NotePage({ params }: { params: { id: string } }) {
                   <div className="p-8 bg-secondary rounded-lg min-h-[400px]">
                     {note.mindmapData ? (
                       <div className="w-full h-full">
-                        {note.mindmapData.trim().startsWith('<svg') ? (
-                          <div dangerouslySetInnerHTML={{ __html: note.mindmapData }} />
+                        {note.mindmapData.trim().startsWith("<svg") ? (
+                          <div
+                            dangerouslySetInnerHTML={{
+                              __html: note.mindmapData,
+                            }}
+                          />
                         ) : (
-                          <pre className="text-sm whitespace-pre-wrap">{note.mindmapData}</pre>
+                          <pre className="text-sm whitespace-pre-wrap">
+                            {note.mindmapData}
+                          </pre>
                         )}
                       </div>
                     ) : (
@@ -312,7 +400,9 @@ export default function NotePage({ params }: { params: { id: string } }) {
                         <div className="text-center space-y-4">
                           <Network className="w-16 h-16 mx-auto text-primary" />
                           <div>
-                            <h3 className="font-semibold mb-2">No Mindmap Available</h3>
+                            <h3 className="font-semibold mb-2">
+                              No Mindmap Available
+                            </h3>
                             <p className="text-sm text-muted-foreground max-w-md">
                               This note doesn't have a mindmap visualization.
                             </p>
@@ -326,38 +416,56 @@ export default function NotePage({ params }: { params: { id: string } }) {
             </TabsContent>
           </Tabs>
 
-          <div className="flex gap-4 justify-end mt-6">
-            <select
-              value={selectedType}
-              onChange={e => setSelectedType(e.target.value as "transcript" | "notes" | "mindmap")}
-              className="border rounded px-2 py-1"
-            >
-              <option value="transcript">Transcript</option>
-              <option value="notes">Structured Notes</option>
-              <option value="mindmap" disabled={!note?.mindmapData}>Mindmap</option>
-            </select>
-            <select
-              value={selectedFormat}
-              onChange={e => setSelectedFormat(e.target.value as "docx" | "pdf" | "txt")}
-              className="border rounded px-2 py-1"
-            >
-              <option value="docx">DOCX</option>
-              <option value="pdf">PDF</option>
-              <option value="txt">TXT</option>
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleDownload(selectedType, selectedFormat)}
-              disabled={isExporting || (selectedType === "mindmap" && !note?.mindmapData)}
-              className="gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Download
-            </Button>
+          <div className="flex gap-4 justify-end mt-6 items-center">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownload("transcript", selectedFormat)}
+                disabled={isExporting}
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Transcript
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownload("notes", selectedFormat)}
+                disabled={isExporting}
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Notes
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadMindmapSVG}
+                disabled={isExporting || !note?.mindmapData}
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Mindmap
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedFormat}
+                onValueChange={(v) => setSelectedFormat(v as "docx" | "txt")}
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="docx">DOCX</SelectItem>
+                  <SelectItem value="txt">TXT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </main>
     </div>
-  )
+  );
 }

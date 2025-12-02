@@ -1,31 +1,38 @@
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, convertInchesToTwip } from "docx"
+import { NextResponse } from "next/server";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import { Buffer } from "buffer";
 
 export async function POST(request: Request) {
   try {
-    const { content, type, format } = await request.json()
+    const { content, type, format } = await request.json();
 
     if (!content || !type) {
-      return Response.json({ error: "Content and type are required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Content and type are required" },
+        { status: 400 }
+      );
     }
 
     // Create title based on type
-    let title = ""
+    let title = "";
     switch (type) {
       case "transcript":
-        title = "SMARTNOTES - TRANSCRIPT"
-        break
+        title = "SMARTNOTES - TRANSCRIPT";
+        break;
       case "notes":
-        title = "SMARTNOTES - STRUCTURED NOTES"
-        break
+        title = "SMARTNOTES - STRUCTURED NOTES";
+        break;
       case "mindmap":
-        title = "SMARTNOTES - MINDMAP"
-        break
+        title = "SMARTNOTES - MINDMAP";
+        break;
       default:
-        return Response.json({ error: "Invalid type" }, { status: 400 })
+        return NextResponse.json({ error: "Invalid type" }, { status: 400 });
     }
 
     // Parse content into paragraphs for better formatting
-    const contentLines = content.split("\n").filter((line) => line.trim())
+    const contentText =
+      typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    const contentLines = contentText.split("\n").filter((line) => line.trim());
 
     // Create document with proper structure
     const doc = new Document({
@@ -61,19 +68,36 @@ export async function POST(request: Request) {
           ],
         },
       ],
-    })
+    });
 
-    // Generate the document as a buffer
-    const buffer = await Packer.toBuffer(doc)
+    if (format === "txt") {
+      const textData = contentText;
+      return new NextResponse(textData, {
+        headers: {
+          "Content-Type": "text/plain",
+          "Content-Disposition": `attachment; filename="smartnotes-${type}-${Date.now()}.txt"`,
+        },
+      });
+    }
+
+    // PDF export isn't supported - clients should only request DOCX or TXT
+
+    // Default: DOCX
+    const buffer = await Packer.toBuffer(doc);
+    const bytes = Buffer.from(buffer);
     // Return as downloadable file
-    return new Response(buffer, {
+    return new NextResponse(bytes, {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="smartnotes-${type}-${Date.now()}.docx"`,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error exporting document:", error)
-    return Response.json({ error: "Failed to export document" }, { status: 500 })
+    console.error("Error exporting document:", error);
+    return NextResponse.json(
+      { error: "Failed to export document" },
+      { status: 500 }
+    );
   }
 }
