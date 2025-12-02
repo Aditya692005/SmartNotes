@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1")
     const limit = parseInt(searchParams.get("limit") || "10")
     const skip = (page - 1) * limit
+    const full = searchParams.get("full") === "1"
 
     const [notes, total] = await Promise.all([
       prisma.note.findMany({
@@ -29,15 +30,27 @@ export async function GET(request: NextRequest) {
         },
         skip,
         take: limit,
-        select: {
-          id: true,
-          title: true,
-          source: true,
-          sourceUrl: true,
-          fileName: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: full
+          ? {
+              id: true,
+              title: true,
+              source: true,
+              sourceUrl: true,
+              fileName: true,
+              createdAt: true,
+              updatedAt: true,
+              structuredNotes: true,
+              mindmapData: true,
+            }
+          : {
+              id: true,
+              title: true,
+              source: true,
+              sourceUrl: true,
+              fileName: true,
+              createdAt: true,
+              updatedAt: true,
+            },
       }),
       prisma.note.count({
         where: {

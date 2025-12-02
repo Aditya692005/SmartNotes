@@ -29,6 +29,8 @@ interface Note {
   fileName?: string
   createdAt: string
   updatedAt: string
+  structuredNotes?: string
+  mindmapData?: string
 }
 
 export default function DashboardPage() {
@@ -52,7 +54,7 @@ export default function DashboardPage() {
 
   const fetchNotes = async () => {
     try {
-      const response = await fetch("/api/notes")
+      const response = await fetch("/api/notes?full=1")
       if (response.ok) {
         const data = await response.json()
         setNotes(data.notes)
@@ -245,6 +247,19 @@ export default function DashboardPage() {
                         </span>
                       </div>
                       
+                      {/* Structured Notes Preview */}
+                      {note.structuredNotes && (
+                        <div className="text-xs mt-2 max-h-16 overflow-hidden whitespace-pre-line bg-muted rounded p-2">
+                          {note.structuredNotes.split("\n").slice(0, 4).join("\n")}
+                          {note.structuredNotes.split("\n").length > 4 && "..."}
+                        </div>
+                      )}
+                      {/* Mindmap Preview Icon */}
+                      {note.mindmapData && (
+                        <div className="flex items-center gap-1 text-xs text-primary mt-1">
+                          <span role="img" aria-label="mindmap">🧠 Mindmap available</span>
+                        </div>
+                      )}
                       {note.sourceUrl && (
                         <div className="flex items-center gap-2">
                           <ExternalLink className="w-4 h-4 text-muted-foreground" />
@@ -258,7 +273,6 @@ export default function DashboardPage() {
                           </a>
                         </div>
                       )}
-
                       <div className="flex gap-2">
                         <Link href={`/notes/${note.id}`} className="flex-1">
                           <Button variant="outline" size="sm" className="w-full gap-2">

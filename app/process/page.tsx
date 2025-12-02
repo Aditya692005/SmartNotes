@@ -101,6 +101,90 @@ export default function ProcessPage() {
     }
   };
 
+  // Save note to DB when generation is complete
+  const noteSavedRef = useRef(false);
+  const saveNote = async () => {
+    if (
+      currentStep === "complete" &&
+      transcript &&
+      structuredNotes &&
+      mindmap &&
+      transcript.trim() &&
+      structuredNotes.trim() &&
+      mindmap.trim()
+    ) {
+      // Prevent duplicate saves
+      if (noteSavedRef.current) return;
+      noteSavedRef.current = true;
+      try {
+        // Try to get a title from the first heading in notes, else fallback
+        let title = "Untitled Note";
+        const headingMatch = structuredNotes.match(/^# (.+)$/m);
+        if (headingMatch) title = headingMatch[1].trim();
+
+        // Try to get source info from sessionStorage (if available)
+        let source = searchParams.get("source") || "unknown";
+        let sourceUrl = undefined;
+        let fileName = undefined;
+        if (source === "youtube") {
+          const stored = sessionStorage.getItem("transcriptionData");
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (parsed.url) sourceUrl = parsed.url;
+            } catch {}
+          }
+          // Also try to get from searchParams
+          sourceUrl = sourceUrl || searchParams.get("url") || undefined;
+        } else if (source === "file-upload") {
+          const stored = sessionStorage.getItem("transcriptionData");
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (parsed.fileName) fileName = parsed.fileName;
+            } catch {}
+          }
+        }
+
+        const res = await fetch("/api/notes/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            transcript,
+            structuredNotes,
+            mindmapData: mindmap,
+            source,
+            sourceUrl,
+            fileName,
+          }),
+        });
+        if (res.ok) {
+          toast({
+            title: "Note Saved!",
+            description: "Your note has been saved to the dashboard.",
+          });
+        } else {
+          const data = await res.json();
+          toast({
+            title: "Save Failed",
+            description: data?.error || "Could not save note.",
+            variant: "destructive",
+          });
+        }
+      } catch (err) {
+        toast({
+          title: "Save Failed",
+          description: "Could not save note.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+  useEffect(() => {
+    saveNote();
+  }, [currentStep, transcript, structuredNotes, mindmap, searchParams, toast]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />

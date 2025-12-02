@@ -19,7 +19,6 @@ import {
   ExternalLink
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { MindmapFlow } from "@/components/mindmap-flow"
 import Link from "next/link"
 
 interface Note {
@@ -302,7 +301,11 @@ export default function NotePage({ params }: { params: { id: string } }) {
                   <div className="p-8 bg-secondary rounded-lg min-h-[400px]">
                     {note.mindmapData ? (
                       <div className="w-full h-full">
-                        <MindmapFlow data={note.mindmapData} />
+                        {note.mindmapData.trim().startsWith('<svg') ? (
+                          <div dangerouslySetInnerHTML={{ __html: note.mindmapData }} />
+                        ) : (
+                          <pre className="text-sm whitespace-pre-wrap">{note.mindmapData}</pre>
+                        )}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center h-full">
